@@ -24,7 +24,7 @@
 local LibFlyPaper = LibStub:NewLibrary('LibFlyPaper-1.1', 0)
 if not LibFlyPaper then return end
 
-local DEFAULT_STICKY_TOLERANCE = 4
+local DEFAULT_STICKY_TOLERANCE = 16
 
 -- returns frame points: left, right, top, bottom, hCenter, vCenter
 local function GetPoints(frame)
@@ -130,7 +130,7 @@ local FRAME_ANCHOR_DISTANCES = {
 		local left, right, top, bottom, hCenter, vCenter = GetPoints(frame)
 		local oLeft, oRight, oTop, oBottom, ohCenter, ovCenter = GetPoints(otherFrame)
 
-		return (left - oLeft) ^ 2 + (top - oBottom) ^ 2
+		return (right - oRight) ^ 2 + (top - oBottom) ^ 2
 	end,
 
 	BC = function(frame, otherFrame)
@@ -279,9 +279,9 @@ local function GetClosestAnchor(frame, otherFrame)
 	return bestAnchor, bestDistance
 end
 
-local function StickToClosestFrameInRegistry(frame, registry, stickyTolerance)
+local function GetClosestFrameInRegistry(frame, registry, stickyTolerance)
 	local stickyDistance = (tonumber(stickyTolerance) or DEFAULT_STICKY_TOLERANCE) ^ 2
-	local bestAnchor, bestKey
+	local bestAnchor, bestKey, bestFrame
 	local bestDistance = math.huge
 
 	for rKey, rFrame in pairs(registry) do
@@ -296,6 +296,7 @@ local function StickToClosestFrameInRegistry(frame, registry, stickyTolerance)
 				distance = distance + GetADistance(frame, rFrame)
 
 				if distance < bestDistance then
+					bestFrame = rFrame
 					bestKey = rKey
 					bestAnchor = anchor
 					bestDistance = distance
@@ -304,7 +305,24 @@ local function StickToClosestFrameInRegistry(frame, registry, stickyTolerance)
 		end
 	end
 
-	return bestAnchor, bestKey, bestDistance
+	return bestFrame, bestAnchor, bestKey, bestDistance
+end
+
+local function AnchorFrameToFrame(frame, otherFrame, anchor, xOff, yOff)
+	xOff = tonumber(xOff) or 0
+	yOff = tonumber(yOff) or 0
+
+	local point, relPoint, xMod, yMod = unpack(FRAME_ANCHOR_POINTS[anchor])
+
+	frame:ClearAllPoints()
+
+	frame:SetPoint(
+		point,
+		otherFrame,
+		relPoint,
+		xOff * xMod,
+		yOff * yMod
+	)
 end
 
 --------------------------------------------------------------------------------
@@ -328,17 +346,7 @@ function LibFlyPaper.Stick(frame, otherFrame, stickyTolerance, xOff, yOff)
 	local anchor, distance = GetClosestAnchor(frame, otherFrame)
 
 	if distance <= (stickyTolerance ^ 2) then
-		local point, relPoint, xMod, yMod = FRAME_ANCHOR_POINTS[anchor]
-
-		frame:ClearAllPoints()
-
-		frame:SetPoint(
-			point,
-			otherFrame,
-			relPoint,
-			xOff * xMod,
-			yOff * yMod
-		)
+		AnchorFrameToFrame(frame, otherFrame, anchor, xOff, yOff)
 
 		return anchor, distance
 	end
@@ -355,51 +363,42 @@ function LibFlyPaper.StickToPoint(frame, otherFrame, anchor, xOff, yOff)
 		return
 	end
 
-	xOff = tonumber(xOff) or 0
-	yOff = tonumber(yOff) or 0
-
-	local point, relPoint = FRAME_ANCHOR_POINTS[anchor]
-
-	frame:ClearAllPoints()
-
-	frame:SetPoint(
-		point,
-		otherFrame,
-		relPoint,
-		xOff,
-		yOff
-	)
+	AnchorFrameToFrame(frame, otherFrame, anchor, xOff, yOff)
 
 	return anchor
 end
 
 -- iterate through all registered frames in namespace
-function LibFlyPaper.StickToClosestFrame(frame, stickyTolerance)
+function LibFlyPaper.StickToClosestFrame(frame, stickyTolerance, xOff, yOff)
 	local registry = LibFlyPaper._registry
 	if not registry then
 		return
 	end
 
-	local bestAnchor, bestAddon, bestKey
+	local bestAnchor, bestAddon, bestKey, bestFrame
 	local bestDistance = math.huge
 
 	for addonName in pairs(registry) do
-		local anchor, key, distance = StickToClosestFrameInRegistry(frame, registry, stickyTolerance)
+		local addonFrame, addonAnchor, addonKey, addonDist = GetClosestFrameInRegistry(frame, registry, stickyTolerance)
 
-		if distance < bestDistance then
+		if addonDist < bestDistance then
 			bestAddon = addonName
-			bestKey = key
-			bestAnchor = anchor
-			bestDistance = distance
+			bestFrame = addonFrame
+			bestKey = addonKey
+			bestAnchor = addonAnchor
+			bestDistance = addonDist
 		end
 	end
 
-	return bestAnchor, bestAddon, bestKey, bestDistance
+	if bestFrame then
+		AnchorFrameToFrame(frame, bestFrame, bestAnchor, xOff, yOff)
+
+		return bestAnchor, bestAddon, bestKey, bestDistance
+	end
 end
 
-
 -- iterate through all registered frames, and try to stick to the nearest one
-function LibFlyPaper.StickToClosestAddonFrame(frame, addonName, stickyTolerance)
+function LibFlyPaper.StickToClosestAddonFrame(frame, addonName, stickyTolerance, xOff, yOff)
 	local registry = LibFlyPaper._registry
 	if not registry then
 		return
@@ -410,19 +409,26 @@ function LibFlyPaper.StickToClosestAddonFrame(frame, addonName, stickyTolerance)
 		return
 	end
 
-	local anchor, key, distance = StickToClosestFrameInRegistry(frame, addonRegistry, stickyTolerance)
-	return anchor, key, distance
+	local bestFrame, bestAnchor, bestKey, bestDistance = GetClosestFrameInRegistry(frame, addonRegistry, stickyTolerance)
+
+	if bestFrame then
+		AnchorFrameToFrame(frame, bestFrame, bestAnchor, xOff, yOff)
+
+		return bestAnchor, bestKey, bestDistance
+	end
 end
 
 function LibFlyPaper.AddFrame(addonName, key, frame)
 	local registry = LibFlyPaper._registry
 	if not registry then
 		registry = {}
+		LibFlyPaper._registry = registry
 	end
 
 	local addonRegistry = LibFlyPaper._registry[addonName]
 	if not addonRegistry then
 		addonRegistry = {}
+		registry[addonName] = addonRegistry
 	end
 
 	if not addonRegistry[key] then

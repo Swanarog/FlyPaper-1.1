@@ -19,4 +19,16 @@ local anchorPoint = LibFlyPaper.Stick(frame, otherFrame, tolerance, xOff, yOff)
 -- yOff: vertical spacing to include between each frame
 -- returns an anchor point if attached and nil otherwise
 local anchorPoint = LibFlyPaper.StickToPoint(frame, otherFrame, point, xOff, yOff)
+
+local anchorPoint, namespace, key = LibFlyPaper.StickToClosestFrame(frame, tolerance, xOff, yOff)
+
+local anchorPoint, key = LibFlyPaper.StickToClosestAddonFrame(frame, addonName, tolerance, xOff, yOff)
+
+-- adds the frame to the list of frames to check when calling StickToClosestFrame
+-- returns true if the frame was added, and false otherwise
+local registered = LibFlyPaper.AddFrame(addonName, key, frame)
+
+-- removes the frame to the list of frames to check when calling StickToClosestFrame
+-- returns true if the frame was removed, and false otherwise
+local registered = LibFlyPaper.RemoveFrame(addonName, key, frame)
 ```
