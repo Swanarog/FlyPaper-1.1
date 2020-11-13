@@ -1,0 +1,11 @@
+#@retail@
+## Interface: 90001
+#@end-retail@
+#@non-retail@
+# ## Interface: 11305
+#@end-non-retail@
+## Title: FlyPaper
+## Notes: A library for attaching one frame to another
+## Author: Tuller
+## Version: 1.1
+LibFlyPaper-1.1.lua
