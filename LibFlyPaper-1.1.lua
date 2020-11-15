@@ -221,10 +221,12 @@ local function GetClosestAnchor(frame, otherFrame)
 	return bestAnchor, bestDistance
 end
 
-local function GetClosestFrame(frame, registry, stickyTolerance)
-	local maxDistance = (tonumber(stickyTolerance) or DEFAULT_STICKY_TOLERANCE) ^ 2
-	local bestAnchor, bestId, bestFrame
+local function GetClosestFrame(frame, registry, tolerance)
+	local maxDistance = (tonumber(tolerance) or DEFAULT_STICKY_TOLERANCE) ^ 2
+	local bestAnchor
 	local bestDistance = math.huge
+	local bestFrame
+	local bestId
 
 	for rId, rFrame in pairs(registry) do
 		if CanAttach(frame, rFrame) then
@@ -238,10 +240,10 @@ local function GetClosestFrame(frame, registry, stickyTolerance)
 				distance = distance + GetGroupDistance(frame, rFrame)
 
 				if distance < bestDistance then
-					bestFrame = rFrame
-					bestId = rId
 					bestAnchor = anchor
 					bestDistance = distance
+					bestFrame = rFrame
+					bestId = rId
 				end
 			end
 		end
@@ -251,22 +253,15 @@ local function GetClosestFrame(frame, registry, stickyTolerance)
 end
 
 local function AnchorFrame(frame, relFrame, anchor, xOff, yOff)
-	xOff = tonumber(xOff) or 0
-	yOff = tonumber(yOff) or 0
-
-	local point, relPoint, xMod, yMod = unpack(FRAME_ANCHOR_POINTS[anchor])
+	local point, relPoint, xMult, yMult = unpack(FRAME_ANCHOR_POINTS[anchor])
+	local s = frame:GetEffectiveScale()
+	local x = ((tonumber(xOff) or 0) * xMult) / s
+	local y = ((tonumber(yOff) or 0) * yMult) / s
 
 	frame:ClearAllPoints()
+	frame:SetPoint(point, relFrame, relPoint, x, y)
 
-	frame:SetPoint(
-		point,
-		relFrame,
-		relPoint,
-		xOff * xMod,
-		yOff * yMod
-	)
-
-	LibFlyPaper._callbacks:Fire('OnAnchorFrame', frame, relFrame, anchor, xOff, yOff)
+	LibFlyPaper._callbacks:Fire('OnAnchorFrame', frame, relFrame, anchor, x, y)
 end
 
 --------------------------------------------------------------------------------
@@ -277,40 +272,35 @@ if not LibFlyPaper._callbacks then
 	LibFlyPaper._callbacks = LibStub("CallbackHandler-1.0"):New(LibFlyPaper)
 end
 
--- attempts to attach <frame> to <otherFrame>
+-- attempts to attach <frame> to <relFrame>
 -- tolerance: how close the frames need to be to attach
 -- xOff: horizontal spacing to include between each frame
 -- yOff: vertical spacing to include between each frame
 -- returns an anchor point if attached and nil otherwise
-function LibFlyPaper.Stick(frame, otherFrame, tolerance, xOff, yOff)
-	if not CanAttach(frame, otherFrame) then
+function LibFlyPaper.Stick(frame, relFrame, tolerance, xOff, yOff)
+	if not CanAttach(frame, relFrame) then
 		return
 	end
 
-	local anchor, distance = GetClosestAnchor(frame, otherFrame)
+	local anchor, distance = GetClosestAnchor(frame, relFrame)
 	local maxDistance = (tonumber(tolerance) or DEFAULT_STICKY_TOLERANCE) ^ 2
 
-	if distance <= (maxDistance ^ 2) then
-		AnchorFrame(frame, otherFrame, anchor, xOff, yOff)
-
+	if distance <= maxDistance then
+		AnchorFrame(frame, relFrame, anchor, xOff, yOff)
 		return anchor, distance
 	end
 end
 
--- attempts to anchor frame to a specific anchor point on otherFrame
+-- attempts to anchor frame to a specific anchor point on relFrame
 -- point: any non nil return value of LibFlyPaper.Stick
 -- xOff: horizontal spacing to include between each frame
 -- yOff: vertical spacing to include between each frame
 -- returns an anchor point if attached and nil otherwise
-function LibFlyPaper.StickToAnchor(frame, otherFrame, anchor, xOff, yOff)
-	-- check to make sure its actually possible to attach the frames
-	if not (IsValidAnchor(anchor) and CanAttach(frame, otherFrame)) then
-		return
+function LibFlyPaper.StickToAnchor(frame, relFrame, anchor, xOff, yOff)
+	if IsValidAnchor(anchor) and CanAttach(frame, relFrame) then
+		AnchorFrame(frame, relFrame, anchor, xOff, yOff)
+		return anchor
 	end
-
-	AnchorFrame(frame, otherFrame, anchor, xOff, yOff)
-
-	return anchor
 end
 
 -- api compatibility with v1
@@ -325,9 +315,9 @@ function LibFlyPaper.StickToClosestFrame(frame, tolerance, xOff, yOff)
 
 	local bestAnchor
 	local bestDistance = math.huge
-	local bestFrame
 	local bestGroup
 	local bestId
+	local bestRelFrame
 
 	for groupName, group in pairs(registry) do
 		local relFrame, anchor, id, distance = GetClosestFrame(frame, group, tolerance)
@@ -335,15 +325,15 @@ function LibFlyPaper.StickToClosestFrame(frame, tolerance, xOff, yOff)
 		if distance < bestDistance then
 			bestAnchor = anchor
 			bestDistance = distance
-			bestFrame = relFrame
 			bestGroup = groupName
 			bestId = id
+			bestRelFrame = relFrame
 		end
 	end
 
-	if bestFrame then
-		AnchorFrame(frame, bestFrame, bestAnchor, xOff, yOff)
-		return bestAnchor, bestGroup, bestId, bestFrame
+	if bestRelFrame then
+		AnchorFrame(frame, bestRelFrame, bestAnchor, xOff, yOff)
+		return bestAnchor, bestGroup, bestId, bestRelFrame
 	end
 end
 
@@ -433,4 +423,8 @@ function LibFlyPaper.GetFrameInfo(frame)
 			end
 		end
 	end
+end
+
+function LibFlyPaper.GetDefaultStickyTolerance()
+	return DEFAULT_STICKY_TOLERANCE
 end

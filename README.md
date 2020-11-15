@@ -74,5 +74,5 @@ function owner:OnRemoveFrame(msg, frame, groupName, id) end
 -- called when a frame is anchored to another frame
 -- frame: what frame was anchored
 -- relFrame: what frame the frame was anchored to
-function owner:OnAnchorFrame(msg, frame, relFrame, anchor, xOff, yOff) end
+function owner:OnAnchorFrame(msg, frame, relFrame, anchor, x, y) end
 ```
