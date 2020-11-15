@@ -60,31 +60,31 @@ local FRAME_ANCHORS = {
 	"BL",
 	"BR",
 	"BC",
-	"LB",
 	"LT",
+	"LB",
 	"LC",
-	"RB",
 	"RT",
+	"RB",
 	"RC"
 }
 
 local FRAME_ANCHOR_POINTS = {
 	-- bottom to top
 	TL = {'BOTTOMLEFT', 'TOPLEFT', 0, 1},
-	TC = {'BOTTOM', 'TOP', 0, 1},
 	TR = {'BOTTOMRIGHT', 'TOPRIGHT', 0, 1},
+	TC = {'BOTTOM', 'TOP', 0, 1},
 	-- top to bottom
 	BL = {'TOPLEFT', 'BOTTOMLEFT', 0, -1},
-	BC = {'TOP', 'BOTTOM', 0, -1},
 	BR = {'TOPRIGHT', 'BOTTOMRIGHT', 0, -1},
+	BC = {'TOP', 'BOTTOM', 0, -1},
 	-- right to left
 	LT = {'TOPRIGHT', 'TOPLEFT', -1, 0},
-	LC = {'RIGHT', 'LEFT', -1, 0},
 	LB = {'BOTTOMRIGHT', 'BOTTOMLEFT', -1, 0},
+	LC = {'RIGHT', 'LEFT', -1, 0},
 	-- left to right
 	RT = {'TOPLEFT', 'TOPRIGHT', 1, 0},
-	RC = {'LEFT', 'RIGHT', 1, 0},
 	RB = {'BOTTOMLEFT', 'BOTTOMRIGHT', 1, 0},
+	RC = {'LEFT', 'RIGHT', 1, 0},
 }
 
 -- translates anchor points into x/y coordinates (bottom left origin)
@@ -223,10 +223,10 @@ end
 
 local function GetClosestFrame(frame, registry, stickyTolerance)
 	local maxDistance = (tonumber(stickyTolerance) or DEFAULT_STICKY_TOLERANCE) ^ 2
-	local bestAnchor, bestKey, bestFrame
+	local bestAnchor, bestId, bestFrame
 	local bestDistance = math.huge
 
-	for rKey, rFrame in pairs(registry) do
+	for rId, rFrame in pairs(registry) do
 		if CanAttach(frame, rFrame) then
 			local anchor, distance = GetClosestAnchor(frame, rFrame)
 
@@ -239,7 +239,7 @@ local function GetClosestFrame(frame, registry, stickyTolerance)
 
 				if distance < bestDistance then
 					bestFrame = rFrame
-					bestKey = rKey
+					bestId = rId
 					bestAnchor = anchor
 					bestDistance = distance
 				end
@@ -247,10 +247,13 @@ local function GetClosestFrame(frame, registry, stickyTolerance)
 		end
 	end
 
-	return bestFrame, bestAnchor, bestKey, bestDistance
+	return bestFrame, bestAnchor, bestId, bestDistance
 end
 
 local function AnchorFrame(frame, relFrame, anchor, xOff, yOff)
+	xOff = tonumber(xOff) or 0
+	yOff = tonumber(yOff) or 0
+
 	local point, relPoint, xMod, yMod = unpack(FRAME_ANCHOR_POINTS[anchor])
 
 	frame:ClearAllPoints()
@@ -259,8 +262,8 @@ local function AnchorFrame(frame, relFrame, anchor, xOff, yOff)
 		point,
 		relFrame,
 		relPoint,
-		(tonumber(xOff) or 0) * xMod,
-		(tonumber(yOff) or 0) * yMod
+		xOff * xMod,
+		yOff * yMod
 	)
 
 	LibFlyPaper._callbacks:Fire('OnAnchorFrame', frame, relFrame, anchor, xOff, yOff)
@@ -327,7 +330,7 @@ function LibFlyPaper.StickToClosestFrame(frame, tolerance, xOff, yOff)
 	local bestId
 
 	for groupName, group in pairs(registry) do
-		local relFrame, id, anchor, distance = GetClosestFrame(frame, group, tolerance)
+		local relFrame, anchor, id, distance = GetClosestFrame(frame, group, tolerance)
 
 		if distance < bestDistance then
 			bestAnchor = anchor
@@ -356,7 +359,7 @@ function LibFlyPaper.StickToClosestFrameInGroup(frame, groupName, tolerance, xOf
 		return
 	end
 
-	local relFrame, id, anchor = GetClosestFrame(frame, group, tolerance)
+	local relFrame, anchor, id = GetClosestFrame(frame, group, tolerance)
 
 	if relFrame then
 		AnchorFrame(frame, relFrame, anchor, xOff, yOff)
