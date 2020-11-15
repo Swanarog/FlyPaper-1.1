@@ -1,18 +1,18 @@
--- LibFlyPaper
+-- LibFlyPaper-1.1
 -- Functionality for sticking one frome to another frame
-
+--
 -- Copyright 2020 Jason Greer
-
+--
 -- Permission is hereby granted, free of charge, to any person obtaining a copy
 -- of this software and associated documentation files (the "Software"), to deal
 -- in the Software without restriction, including without limitation the rights
 -- to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 -- copies of the Software, and to permit persons to whom the Software is
 -- furnished to do so, subject to the following conditions:
-
+--
 -- The above copyright notice and this permission notice shall be included in
 -- all copies or substantial portions of the Software.
-
+--
 -- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 -- IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 -- FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -26,26 +26,6 @@ if not LibFlyPaper then return end
 
 local DEFAULT_STICKY_TOLERANCE = 16
 
--- returns frame points: left, right, top, bottom, hCenter, vCenter
-local function GetPoints(frame)
-	local l, b, w, h
-
-	-- GetScaledRect may not exist in wow classic
-	if frame.GetScaledRect then
-		l, b, w, h = frame:GetScaledRect()
-	else
-		l, b, w, h = frame:GetRect()
-		local s = frame:GetEffectiveScale()
-
-		l = l * s
-		b = b * s
-		w = w * s
-		h = h * s
-	end
-
-	return l, (l + w), (b + h), b, (l + w/2), (b + h/2)
-end
-
 -- all possible frame stratas (used for z distance calculations)
 local FRAME_STRATAS = {
 	BACKGROUND = 1,
@@ -58,143 +38,107 @@ local FRAME_STRATAS = {
 	TOOLTIP = 8
 }
 
--- all possible anchor points
+--------------------------------------------------------------------------------
+-- a rough diagram of frame anchors. Anchor names are based upon the point on
+-- the frame we're attaching to
+--
+--    BL BC BR
+-- TR TL T  TR TL
+-- RC L      R LC
+-- BR BL B  BR BL
+--    TL TC BL
+--
+-- So, for example, BL refers to anchoring the top left of a frame to the
+-- bottom left of another frame
+--------------------------------------------------------------------------------
+
+-- sorted in evaluation orders
 local FRAME_ANCHORS = {
-	-- bottom
 	"TL",
 	"TR",
 	"TC",
-	-- top
 	"BL",
 	"BR",
 	"BC",
-	-- right
 	"LB",
 	"LT",
 	"LC",
-	-- left
 	"RB",
 	"RT",
 	"RC"
 }
 
 local FRAME_ANCHOR_POINTS = {
-	-- top
+	-- bottom to top
 	TL = {'BOTTOMLEFT', 'TOPLEFT', 0, 1},
-	TR = {'BOTTOMRIGHT', 'TOPRIGHT', 0, 1},
 	TC = {'BOTTOM', 'TOP', 0, 1},
-	-- bottom
+	TR = {'BOTTOMRIGHT', 'TOPRIGHT', 0, 1},
+	-- top to bottom
 	BL = {'TOPLEFT', 'BOTTOMLEFT', 0, -1},
-	BR = {'TOPRIGHT', 'BOTTOMRIGHT', 0, -1},
 	BC = {'TOP', 'BOTTOM', 0, -1},
-	-- left
-	LB = {'BOTTOMRIGHT', 'BOTTOMLEFT', -1, 0},
+	BR = {'TOPRIGHT', 'BOTTOMRIGHT', 0, -1},
+	-- right to left
 	LT = {'TOPRIGHT', 'TOPLEFT', -1, 0},
 	LC = {'RIGHT', 'LEFT', -1, 0},
-	-- right
-	RB = {'BOTTOMLEFT', 'BOTTOMRIGHT', 1, 0},
+	LB = {'BOTTOMRIGHT', 'BOTTOMLEFT', -1, 0},
+	-- left to right
 	RT = {'TOPLEFT', 'TOPRIGHT', 1, 0},
 	RC = {'LEFT', 'RIGHT', 1, 0},
+	RB = {'BOTTOMLEFT', 'BOTTOMRIGHT', 1, 0},
 }
 
-local FRAME_ANCHOR_DISTANCES = {
-	TL = function(frame, otherFrame)
-		local left, right, top, bottom, hCenter, vCenter = GetPoints(frame)
-		local oLeft, oRight, oTop, oBottom, ohCenter, ovCenter = GetPoints(otherFrame)
+-- translates anchor points into x/y coordinates (bottom left origin)
+local COORDS = {
+	TOPLEFT = function(l, b, w, h) return l, b + h end,
+	TOP = function(l, b, w, h) return l + w/2, b + h end,
+	TOPRIGHT = function(l, b, w, h) return l + w, b + h end,
+	RIGHT = function(l, b, w, h) return l + w, b + h/2 end,
+	BOTTOMRIGHT = function(l, b, w, h) return l + w, b end,
+	BOTTOM = function(l, b, w, h) return l + w/2, b end,
+	BOTTOMLEFT = function(l, b, w, h) return l, b end,
+	LEFT = function(l, b, w, h) return l, b + h/2 end,
+	CENTER = function(l, b, w, h) return l + w/2, b + h/2 end,
+}
 
-		return (left - oLeft) ^ 2 + (bottom - oTop) ^ 2
-	end,
-
-	TR = function(frame, otherFrame)
-		local left, right, top, bottom, hCenter, vCenter = GetPoints(frame)
-		local oLeft, oRight, oTop, oBottom, ohCenter, ovCenter = GetPoints(otherFrame)
-
-		return (right - oRight) ^ 2 + (bottom - oTop) ^ 2
-	end,
-
-	TC = function(frame, otherFrame)
-		local left, right, top, bottom, hCenter, vCenter = GetPoints(frame)
-		local oLeft, oRight, oTop, oBottom, ohCenter, ovCenter = GetPoints(otherFrame)
-
-		return (hCenter - ohCenter) ^ 2 + (bottom - oTop) ^ 2
-	end,
-
-	BL = function(frame, otherFrame)
-		local left, right, top, bottom, hCenter, vCenter = GetPoints(frame)
-		local oLeft, oRight, oTop, oBottom, ohCenter, ovCenter = GetPoints(otherFrame)
-
-		return (left - oLeft) ^ 2 + (top - oBottom) ^ 2
-	end,
-
-	BR = function(frame, otherFrame)
-		local left, right, top, bottom, hCenter, vCenter = GetPoints(frame)
-		local oLeft, oRight, oTop, oBottom, ohCenter, ovCenter = GetPoints(otherFrame)
-
-		return (right - oRight) ^ 2 + (top - oBottom) ^ 2
-	end,
-
-	BC = function(frame, otherFrame)
-		local left, right, top, bottom, hCenter, vCenter = GetPoints(frame)
-		local oLeft, oRight, oTop, oBottom, ohCenter, ovCenter = GetPoints(otherFrame)
-
-		return (hCenter - ohCenter) ^ 2 + (top - oBottom) ^ 2
-	end,
-
-	LB = function(frame, otherFrame)
-		local left, right, top, bottom, hCenter, vCenter = GetPoints(frame)
-		local oLeft, oRight, oTop, oBottom, ohCenter, ovCenter = GetPoints(otherFrame)
-
-		return (right - oLeft) ^ 2 + (bottom - oBottom) ^ 2
-	end,
-
-	LT = function(frame, otherFrame)
-		local left, right, top, bottom, hCenter, vCenter = GetPoints(frame)
-		local oLeft, oRight, oTop, oBottom, ohCenter, ovCenter = GetPoints(otherFrame)
-
-		return (right - oLeft) ^ 2 + (top - oTop) ^ 2
-	end,
-
-	LC = function(frame, otherFrame)
-		local left, right, top, bottom, hCenter, vCenter = GetPoints(frame)
-		local oLeft, oRight, oTop, oBottom, ohCenter, ovCenter = GetPoints(otherFrame)
-
-		return (right - oLeft) ^ 2 + (vCenter - ovCenter) ^ 2
-	end,
-
-	RB = function(frame, otherFrame)
-		local left, right, top, bottom, hCenter, vCenter = GetPoints(frame)
-		local oLeft, oRight, oTop, oBottom, ohCenter, ovCenter = GetPoints(otherFrame)
-
-		return (left - oRight) ^ 2 + (bottom - oBottom) ^ 2
-	end,
-
-	RT = function(frame, otherFrame)
-		local left, right, top, bottom, hCenter, vCenter = GetPoints(frame)
-		local oLeft, oRight, oTop, oBottom, ohCenter, ovCenter = GetPoints(otherFrame)
-
-		return (left - oRight) ^ 2 + (top - oTop) ^ 2
-	end,
-
-	RC = function(frame, otherFrame)
-		local left, right, top, bottom, hCenter, vCenter = GetPoints(frame)
-		local oLeft, oRight, oTop, oBottom, ohCenter, ovCenter = GetPoints(otherFrame)
-
-		return (left - oRight) ^ 2 + (vCenter - ovCenter) ^ 2
+local function IsValidAnchor(anchor)
+	for _, a in pairs(FRAME_ANCHORS) do
+		if a == anchor then
+			return true
+		end
 	end
-}
+	return false
+end
+
+-- gets the scaled rect values for frame
+-- basically here to work around classic maybe not having GetScaledRect
+local function GetScaledRect(frame)
+	if frame.GetScaledRect then
+		return frame:GetScaledRect()
+	end
+
+	local l, b, w, h = frame:GetRect()
+	local s = frame:GetEffectiveScale()
+
+	return l * s, b * s, w * s, h * s
+end
+
+-- two dimensional distance
+local function GetSquaredDistance(x1, y1, x2, y2)
+	return (x1 - x2) ^ 2 + (y1 - y2) ^ 2
+end
 
 -- returns true if <frame> or one of the frames that <frame> is dependent on
 -- is anchored to <otherFrame> and nil otherwise
-local function FrameIsDependentOnFrame(frame, otherFrame)
-	if (frame and otherFrame) then
+local function IsFrameDependentOnFrame(frame, otherFrame)
+	if frame and otherFrame then
 		if frame == otherFrame then
 			return true
 		end
 
 		local points = frame:GetNumPoints()
 		for i = 1, points do
-			local parent = select(2, frame:GetPoint(i))
-			if FrameIsDependentOnFrame(parent, otherFrame) then
+			local _, parent = frame:GetPoint(i)
+			if IsFrameDependentOnFrame(parent, otherFrame) then
 				return true
 			end
 		end
@@ -203,39 +147,33 @@ end
 
 -- returns true if its actually possible to attach the two frames without error
 local function CanAttach(frame, otherFrame)
-	if not (frame and otherFrame) then
-		return
-	elseif FrameIsDependentOnFrame(otherFrame, frame) then
-		return
-	end
-	return true
+	return frame and otherFrame and not IsFrameDependentOnFrame(otherFrame, frame)
 end
 
 -- returns the addon id and addonName associated with the specified frame
-local function GetRegisteredFrameInfo(frame)
+local function GetFrameGroup(frame)
 	local registry = LibFlyPaper._registry
 	if not registry then
 		return
 	end
 
-	for addonName, addonRegistry in pairs(registry) do
-		for addonKey, addonFrame in pairs(addonRegistry) do
-			if addonFrame == frame then
-				return addonKey, addonName
+	for groupName, group in pairs(registry) do
+		for groupId, groupFrame in pairs(group) do
+			if groupFrame == frame then
+				return groupName, groupId
 			end
 		end
 	end
 end
 
-local function GetADistance(frame, otherFrame)
+-- returns 0 if a frame is in the same group as another frame
+-- and 0 otherwise
+local function GetGroupDistance(frame, otherFrame)
 	if frame == otherFrame then
 		return 0
 	end
 
-	local _, addonName = GetRegisteredFrameInfo(frame)
-	local _, otherAddonName = GetRegisteredFrameInfo(otherFrame)
-
-	if addonName == otherAddonName then
+	if GetFrameGroup(frame) == GetFrameGroup(otherFrame) then
 		return 0
 	end
 
@@ -249,11 +187,10 @@ local function GetZDistance(frame, otherFrame)
 
 	local s1 = FRAME_STRATAS[frame:GetFrameStrata()]
 	local s2 = FRAME_STRATAS[otherFrame:GetFrameStrata()]
-
 	local l1 = frame:GetFrameLevel()
 	local l2 = otherFrame:GetFrameLevel()
 
-	return (s1 - s2) ^ 2 + (l1 - l2) ^ 2
+	return GetSquaredDistance(s1, l1, s2, l2)
 end
 
 -- iterate through all anchor points
@@ -265,10 +202,15 @@ local function GetClosestAnchor(frame, otherFrame)
 
 	local bestDistance = math.huge
 	local bestAnchor = false
+	local l1, b1, w1, h1 = GetScaledRect(frame)
+	local l2, b2, w2, h2 = GetScaledRect(otherFrame)
 
 	for i = 1, #FRAME_ANCHORS do
 		local anchor = FRAME_ANCHORS[i]
-		local distance = FRAME_ANCHOR_DISTANCES[anchor](frame, otherFrame)
+		local point, relPoint = unpack(FRAME_ANCHOR_POINTS[anchor])
+		local x1, y1 = COORDS[point](l1, b1, w1, h1)
+		local x2, y2 = COORDS[relPoint](l2, b2, w2, h2)
+		local distance = GetSquaredDistance(x1, y1, x2, y2)
 
 		if distance < bestDistance then
 			bestDistance = distance
@@ -279,8 +221,8 @@ local function GetClosestAnchor(frame, otherFrame)
 	return bestAnchor, bestDistance
 end
 
-local function GetClosestFrameInRegistry(frame, registry, stickyTolerance)
-	local stickyDistance = (tonumber(stickyTolerance) or DEFAULT_STICKY_TOLERANCE) ^ 2
+local function GetClosestFrame(frame, registry, stickyTolerance)
+	local maxDistance = (tonumber(stickyTolerance) or DEFAULT_STICKY_TOLERANCE) ^ 2
 	local bestAnchor, bestKey, bestFrame
 	local bestDistance = math.huge
 
@@ -288,12 +230,12 @@ local function GetClosestFrameInRegistry(frame, registry, stickyTolerance)
 		if CanAttach(frame, rFrame) then
 			local anchor, distance = GetClosestAnchor(frame, rFrame)
 
-			if distance <= stickyDistance then
+			if distance <= maxDistance then
 				-- prioritize frames on the same layer
 				distance = distance + GetZDistance(frame, rFrame)
 
 				-- prioritize frames from the same addon
-				distance = distance + GetADistance(frame, rFrame)
+				distance = distance + GetGroupDistance(frame, rFrame)
 
 				if distance < bestDistance then
 					bestFrame = rFrame
@@ -308,45 +250,45 @@ local function GetClosestFrameInRegistry(frame, registry, stickyTolerance)
 	return bestFrame, bestAnchor, bestKey, bestDistance
 end
 
-local function AnchorFrameToFrame(frame, otherFrame, anchor, xOff, yOff)
-	xOff = tonumber(xOff) or 0
-	yOff = tonumber(yOff) or 0
-
+local function AnchorFrame(frame, relFrame, anchor, xOff, yOff)
 	local point, relPoint, xMod, yMod = unpack(FRAME_ANCHOR_POINTS[anchor])
 
 	frame:ClearAllPoints()
 
 	frame:SetPoint(
 		point,
-		otherFrame,
+		relFrame,
 		relPoint,
-		xOff * xMod,
-		yOff * yMod
+		(tonumber(xOff) or 0) * xMod,
+		(tonumber(yOff) or 0) * yMod
 	)
+
+	LibFlyPaper._callbacks:Fire('OnAnchorFrame', frame, relFrame, anchor, xOff, yOff)
 end
 
 --------------------------------------------------------------------------------
 -- Public API
 --------------------------------------------------------------------------------
 
+if not LibFlyPaper._callbacks then
+	LibFlyPaper._callbacks = LibStub("CallbackHandler-1.0"):New(LibFlyPaper)
+end
+
 -- attempts to attach <frame> to <otherFrame>
 -- tolerance: how close the frames need to be to attach
 -- xOff: horizontal spacing to include between each frame
 -- yOff: vertical spacing to include between each frame
 -- returns an anchor point if attached and nil otherwise
-function LibFlyPaper.Stick(frame, otherFrame, stickyTolerance, xOff, yOff)
+function LibFlyPaper.Stick(frame, otherFrame, tolerance, xOff, yOff)
 	if not CanAttach(frame, otherFrame) then
 		return
 	end
 
-	stickyTolerance = tonumber(stickyTolerance) or DEFAULT_STICKY_TOLERANCE
-	xOff = tonumber(xOff) or 0
-	yOff = tonumber(yOff) or 0
-
 	local anchor, distance = GetClosestAnchor(frame, otherFrame)
+	local maxDistance = (tonumber(tolerance) or DEFAULT_STICKY_TOLERANCE) ^ 2
 
-	if distance <= (stickyTolerance ^ 2) then
-		AnchorFrameToFrame(frame, otherFrame, anchor, xOff, yOff)
+	if distance <= (maxDistance ^ 2) then
+		AnchorFrame(frame, otherFrame, anchor, xOff, yOff)
 
 		return anchor, distance
 	end
@@ -357,101 +299,135 @@ end
 -- xOff: horizontal spacing to include between each frame
 -- yOff: vertical spacing to include between each frame
 -- returns an anchor point if attached and nil otherwise
-function LibFlyPaper.StickToPoint(frame, otherFrame, anchor, xOff, yOff)
+function LibFlyPaper.StickToAnchor(frame, otherFrame, anchor, xOff, yOff)
 	-- check to make sure its actually possible to attach the frames
-	if not (anchor and CanAttach(frame, otherFrame)) then
+	if not (IsValidAnchor(anchor) and CanAttach(frame, otherFrame)) then
 		return
 	end
 
-	AnchorFrameToFrame(frame, otherFrame, anchor, xOff, yOff)
+	AnchorFrame(frame, otherFrame, anchor, xOff, yOff)
 
 	return anchor
 end
 
+-- api compatibility with v1
+LibFlyPaper.StickToPoint = LibFlyPaper.StickToAnchor
+
 -- iterate through all registered frames in namespace
-function LibFlyPaper.StickToClosestFrame(frame, stickyTolerance, xOff, yOff)
+function LibFlyPaper.StickToClosestFrame(frame, tolerance, xOff, yOff)
 	local registry = LibFlyPaper._registry
 	if not registry then
 		return
 	end
 
-	local bestAnchor, bestAddon, bestKey, bestFrame
+	local bestAnchor
 	local bestDistance = math.huge
+	local bestFrame
+	local bestGroup
+	local bestId
 
-	for addonName in pairs(registry) do
-		local addonFrame, addonAnchor, addonKey, addonDist = GetClosestFrameInRegistry(frame, registry, stickyTolerance)
+	for groupName, group in pairs(registry) do
+		local relFrame, id, anchor, distance = GetClosestFrame(frame, group, tolerance)
 
-		if addonDist < bestDistance then
-			bestAddon = addonName
-			bestFrame = addonFrame
-			bestKey = addonKey
-			bestAnchor = addonAnchor
-			bestDistance = addonDist
+		if distance < bestDistance then
+			bestAnchor = anchor
+			bestDistance = distance
+			bestFrame = relFrame
+			bestGroup = groupName
+			bestId = id
 		end
 	end
 
 	if bestFrame then
-		AnchorFrameToFrame(frame, bestFrame, bestAnchor, xOff, yOff)
-
-		return bestAnchor, bestAddon, bestKey, bestDistance
+		AnchorFrame(frame, bestFrame, bestAnchor, xOff, yOff)
+		return bestAnchor, bestGroup, bestId, bestFrame
 	end
 end
 
 -- iterate through all registered frames, and try to stick to the nearest one
-function LibFlyPaper.StickToClosestAddonFrame(frame, addonName, stickyTolerance, xOff, yOff)
+function LibFlyPaper.StickToClosestFrameInGroup(frame, groupName, tolerance, xOff, yOff)
 	local registry = LibFlyPaper._registry
 	if not registry then
 		return
 	end
 
-	local addonRegistry = registry[addonName]
-	if not addonRegistry then
+	local group = registry[groupName]
+	if not group then
 		return
 	end
 
-	local bestFrame, bestAnchor, bestKey, bestDistance = GetClosestFrameInRegistry(frame, addonRegistry, stickyTolerance)
+	local relFrame, id, anchor = GetClosestFrame(frame, group, tolerance)
 
-	if bestFrame then
-		AnchorFrameToFrame(frame, bestFrame, bestAnchor, xOff, yOff)
-
-		return bestAnchor, bestKey, bestDistance
+	if relFrame then
+		AnchorFrame(frame, relFrame, anchor, xOff, yOff)
+		return anchor, id, relFrame
 	end
 end
 
-function LibFlyPaper.AddFrame(addonName, key, frame)
+function LibFlyPaper.AddFrame(groupName, id, frame)
 	local registry = LibFlyPaper._registry
 	if not registry then
 		registry = {}
 		LibFlyPaper._registry = registry
 	end
 
-	local addonRegistry = LibFlyPaper._registry[addonName]
-	if not addonRegistry then
-		addonRegistry = {}
-		registry[addonName] = addonRegistry
+	local group = LibFlyPaper._registry[groupName]
+	if not group then
+		group = {}
+		registry[groupName] = group
 	end
 
-	if not addonRegistry[key] then
-		addonRegistry[key] = frame
-		-- TODO: call callback.OnAddFrame(addonName, id, frame)
+	if not group[id] then
+		group[id] = frame
+		LibFlyPaper._callbacks:Fire('OnAddFrame', frame, groupName, id)
 		return true
 	end
 end
 
-function LibFlyPaper.RemoveFrame(addonName, key, frame)
+function LibFlyPaper.RemoveFrame(groupName, id)
 	local registry = LibFlyPaper._registry
 	if not registry then
 		return
 	end
 
-	local addonRegistry = LibFlyPaper._registry[addonName]
-	if not addonRegistry then
+	local group = LibFlyPaper._registry[groupName]
+	if not group then
 		return
 	end
 
-	if addonRegistry[key] == frame then
-		addonRegistry[key] = nil
-		-- TODO: call callback.OnRemoveFrame(addonName, id, frame)
+	local frame = group[id]
+	if frame then
+		group[id] = nil
+		LibFlyPaper._callbacks:Fire('OnRemoveFrame', frame, groupName, id)
 		return true
+	end
+end
+
+function LibFlyPaper.GetFrame(groupName, id)
+	local registry = LibFlyPaper._registry
+	if not registry then
+		return
+	end
+
+	local group = LibFlyPaper._registry[groupName]
+	if not group then
+		return
+	end
+
+	return group[id]
+end
+
+function LibFlyPaper.GetFrameInfo(frame)
+	local registry = LibFlyPaper._registry
+	if not registry then
+		return
+	end
+
+	for groupName, group in pairs(registry) do
+		for groupId, groupFrame in pairs(group) do
+			if frame == groupFrame then
+				return groupName, groupId
+			end
+		end
 	end
 end

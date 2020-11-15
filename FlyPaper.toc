@@ -7,5 +7,5 @@
 ## Title: FlyPaper
 ## Notes: A library for attaching one frame to another
 ## Author: Tuller
-## Version: 1.1
+## Version: 1.1.0
 LibFlyPaper-1.1.lua
